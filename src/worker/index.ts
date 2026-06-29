@@ -6,6 +6,7 @@ import { runJob } from './jobRunner';
 const config = loadConfig();
 const db = createDb(config.databasePath);
 let shuttingDown = false;
+let currentJobId: string | null = null;
 
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
@@ -21,12 +22,21 @@ async function main() {
       continue;
     }
 
-    await runJob(db, job, config);
+    currentJobId = job.id;
+    try {
+      await runJob(db, job, config);
+    } finally {
+      currentJobId = null;
+    }
   }
 
   db.close();
 }
 
 function stop() {
+  if (shuttingDown) return;
   shuttingDown = true;
+  if (currentJobId) {
+    db.updateJob(currentJobId, { cancelRequested: true });
+  }
 }

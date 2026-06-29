@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { createDb } from '../shared/db';
 import { runCommand as defaultRunCommand, type RunCommandOptions, type RunCommandResult } from '../shared/command';
@@ -27,6 +27,7 @@ class CancelledError extends Error {
 export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig, deps: JobRunnerDeps = {}) {
   const runCommand = deps.runCommand ?? defaultRunCommand;
   let repoPath: string | null = null;
+  let logFilePath = '';
   let finalError: string | null = null;
 
   try {
@@ -37,11 +38,13 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
     if (!safePath.ok) throw new Error(safePath.error);
     repoPath = safePath.path;
 
-    mkdirSync(path.join(repoPath, '.oc-web', 'runs', job.id), { recursive: true });
+    const runDir = path.join(repoPath, '.oc-web', 'runs', job.id);
+    logFilePath = path.join(runDir, 'log.txt');
+    mkdirSync(runDir, { recursive: true });
     await throwIfCancelled(db, job.id);
 
     db.updateJob(job.id, { phase: 'git' });
-    const status = await runLoggedCommand(db, job.id, null, 'git', runCommand, repoPath, config.commandTimeoutMs, 'git', ['status', '--short']);
+    const status = await runLoggedCommand(db, job.id, null, 'git', runCommand, repoPath, config.commandTimeoutMs, logFilePath, 'git', ['status', '--short']);
     if (status.code !== 0) throw new Error(commandFailureMessage('git status --short', status));
 
     if (job.branchName) {
@@ -53,6 +56,7 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
         runCommand,
         repoPath,
         config.commandTimeoutMs,
+        logFilePath,
         'git',
         ['switch', '-c', job.branchName]
       );
@@ -64,6 +68,8 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
       coderModel: job.coderModel,
       reviewerModel: job.reviewerModel
     });
+    appendLogLine(logFilePath, 'system', `OpenCode config created: ${opencodeConfig.created.join(', ') || 'none'}`);
+    appendLogLine(logFilePath, 'system', `OpenCode config skipped: ${opencodeConfig.skipped.join(', ') || 'none'}`);
     db.addLog(job.id, null, 'git', 'system', `OpenCode config created: ${opencodeConfig.created.join(', ') || 'none'}`);
     db.addLog(job.id, null, 'git', 'system', `OpenCode config skipped: ${opencodeConfig.skipped.join(', ') || 'none'}`);
 
@@ -76,20 +82,21 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
       runCommand,
       repoPath,
       config.commandTimeoutMs,
+      logFilePath,
       'opencode',
       ['run', '--agent', 'planner', plannerPrompt(job.request)]
     );
     if (planner.code !== 0) throw new Error(commandFailureMessage('opencode planner', planner));
 
-    const tasks = readPlannedTasks(repoPath);
+    const tasks = readPlannedTasks(repoPath, db, job.id, logFilePath);
     const taskRecords = tasks.map((task, index) => db.createTask(job.id, index, task));
     db.upsertArtifact(job.id, null, 'planning_tasks', JSON.stringify(tasks, null, 2));
 
     for (const task of taskRecords) {
-      await runTask(db, job, task, repoPath, config.commandTimeoutMs, runCommand);
+      await runTask(db, job, task, repoPath, config.commandTimeoutMs, logFilePath, runCommand);
     }
 
-    await finalizeJob(db, job, repoPath, config.commandTimeoutMs, runCommand, null);
+    await finalizeJob(db, job, repoPath, config.commandTimeoutMs, logFilePath, runCommand, null);
   } catch (error) {
     if (error instanceof CancelledError) {
       db.updateJob(job.id, { status: 'cancelled', phase: 'cancelled', finishedAt: new Date().toISOString() });
@@ -100,7 +107,7 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
     finalError = error instanceof Error ? error.message : String(error);
     db.addLog(job.id, null, db.getJob(job.id)?.phase ?? 'failed', 'system', finalError);
     if (repoPath) {
-      await finalizeJob(db, job, repoPath, config.commandTimeoutMs, runCommand, finalError);
+      await finalizeJob(db, job, repoPath, config.commandTimeoutMs, logFilePath, runCommand, finalError);
     } else {
       db.updateJob(job.id, { status: 'failed', error: finalError, finishedAt: new Date().toISOString() });
     }
@@ -113,6 +120,7 @@ async function runTask(
   task: TaskRecord,
   repoPath: string,
   timeoutMs: number,
+  logFilePath: string,
   runCommand: CommandRunner
 ) {
   let feedback = '';
@@ -131,6 +139,7 @@ async function runTask(
       runCommand,
       repoPath,
       timeoutMs,
+      logFilePath,
       'opencode',
       ['run', '--agent', 'coder9b', coderPrompt(task, feedback)]
     );
@@ -148,13 +157,14 @@ async function runTask(
       runCommand,
       repoPath,
       timeoutMs,
+      logFilePath,
       task.verifyCommand,
       [],
       true
     );
 
-    const diff = await collectGitOutput(db, job.id, task.id, 'git diff', repoPath, timeoutMs, runCommand, ['diff']);
-    const changedFiles = await collectGitOutput(db, job.id, task.id, 'git diff --name-only', repoPath, timeoutMs, runCommand, ['diff', '--name-only']);
+    const diff = await collectGitOutput(db, job.id, task.id, 'git diff', repoPath, timeoutMs, logFilePath, runCommand, ['diff']);
+    const changedFiles = await collectGitOutput(db, job.id, task.id, 'git diff --name-only', repoPath, timeoutMs, logFilePath, runCommand, ['diff', '--name-only']);
     db.upsertArtifact(job.id, task.id, 'diff', diff.stdout);
     db.upsertArtifact(job.id, task.id, 'changed_files', changedFiles.stdout);
 
@@ -167,6 +177,7 @@ async function runTask(
       runCommand,
       repoPath,
       timeoutMs,
+      logFilePath,
       'opencode',
       ['run', '--agent', 'reviewer', reviewerPrompt(task, verify, diff.stdout, changedFiles.stdout)]
     );
@@ -229,6 +240,7 @@ async function finalizeJob(
   job: JobRecord,
   repoPath: string,
   timeoutMs: number,
+  logFilePath: string,
   runCommand: CommandRunner,
   setupError: string | null
 ) {
@@ -236,8 +248,8 @@ async function finalizeJob(
   db.updateJob(job.id, { phase: 'finalizing' });
 
   try {
-    const diff = await collectGitOutput(db, job.id, null, 'git diff', repoPath, timeoutMs, runCommand, ['diff']);
-    const changedFiles = await collectGitOutput(db, job.id, null, 'git diff --name-only', repoPath, timeoutMs, runCommand, ['diff', '--name-only']);
+    const diff = await collectGitOutput(db, job.id, null, 'git diff', repoPath, timeoutMs, logFilePath, runCommand, ['diff']);
+    const changedFiles = await collectGitOutput(db, job.id, null, 'git diff --name-only', repoPath, timeoutMs, logFilePath, runCommand, ['diff', '--name-only']);
     db.upsertArtifact(job.id, null, 'diff', diff.stdout);
     db.upsertArtifact(job.id, null, 'changed_files', changedFiles.stdout);
   } catch (error) {
@@ -269,10 +281,11 @@ async function collectGitOutput(
   label: string,
   repoPath: string,
   timeoutMs: number,
+  logFilePath: string,
   runCommand: CommandRunner,
   args: string[]
 ) {
-  const result = await runLoggedCommand(db, jobId, taskId, 'finalizing', runCommand, repoPath, timeoutMs, 'git', args);
+  const result = await runLoggedCommand(db, jobId, taskId, 'finalizing', runCommand, repoPath, timeoutMs, logFilePath, 'git', args);
   if (result.code !== 0) db.addLog(jobId, taskId, 'finalizing', 'system', `${label} failed: ${result.stderr || result.stdout}`);
   return result;
 }
@@ -285,12 +298,15 @@ async function runLoggedCommand(
   runCommand: CommandRunner,
   cwd: string,
   timeoutMs: number,
+  logFilePath: string,
   command: string,
   args: string[],
   shell = false
 ) {
   await throwIfCancelled(db, jobId);
-  db.addLog(jobId, taskId, phase, 'system', `$ ${[command, ...args].join(' ')}`);
+  const line = `$ ${[command, ...args].join(' ')}`;
+  db.addLog(jobId, taskId, phase, 'system', line);
+  appendLogLine(logFilePath, 'system', line);
   let streamedStdout = false;
   let streamedStderr = false;
   const result = await runCommand(command, args, {
@@ -301,15 +317,17 @@ async function runLoggedCommand(
     onStdout: (chunk) => {
       streamedStdout = true;
       db.addLog(jobId, taskId, phase, 'stdout', chunk);
+      appendLogLine(logFilePath, 'stdout', chunk);
     },
     onStderr: (chunk) => {
       streamedStderr = true;
       db.addLog(jobId, taskId, phase, 'stderr', chunk);
+      appendLogLine(logFilePath, 'stderr', chunk);
     }
   });
 
-  if (result.stdout && !streamedStdout) db.addLog(jobId, taskId, phase, 'stdout', result.stdout);
-  if (result.stderr && !streamedStderr) db.addLog(jobId, taskId, phase, 'stderr', result.stderr);
+  if (result.stdout && !streamedStdout) { db.addLog(jobId, taskId, phase, 'stdout', result.stdout); appendLogLine(logFilePath, 'stdout', result.stdout); }
+  if (result.stderr && !streamedStderr) { db.addLog(jobId, taskId, phase, 'stderr', result.stderr); appendLogLine(logFilePath, 'stderr', result.stderr); }
   await throwIfCancelled(db, jobId);
   return result;
 }
@@ -318,8 +336,20 @@ async function throwIfCancelled(db: AppDb, jobId: string) {
   if (db.getJob(jobId)?.cancelRequested) throw new CancelledError();
 }
 
-function readPlannedTasks(repoPath: string): PlannedTask[] {
-  readFileSync(path.join(repoPath, 'TASKS.md'), 'utf8');
+function appendLogLine(logFilePath: string, stream: string, message: string) {
+  if (!logFilePath) return;
+  try { appendFileSync(logFilePath, `[${new Date().toISOString()}] [${stream}] ${message}\n`, 'utf8'); } catch { /* ignore file write errors */ }
+}
+
+function readPlannedTasks(repoPath: string, db: AppDb, jobId: string, logFilePath: string): PlannedTask[] {
+  try {
+    const tasksMd = readFileSync(path.join(repoPath, 'TASKS.md'), 'utf8');
+    db.upsertArtifact(jobId, null, 'TASKS_md', tasksMd);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    db.addLog(jobId, null, 'planning', 'system', `Could not read TASKS.md: ${msg}`);
+    appendLogLine(logFilePath, 'system', `Could not read TASKS.md: ${msg}`);
+  }
   const parsed = JSON.parse(readFileSync(path.join(repoPath, 'tasks.json'), 'utf8')) as unknown;
   if (!Array.isArray(parsed)) throw new Error('tasks.json must be an array');
 

@@ -12,6 +12,9 @@ export function JobDetail({ id }: { id: string }) {
   const [artifacts, setArtifacts] = useState<JobArtifactRecord[]>([]);
   const [commitMsg, setCommitMsg] = useState('');
   const [committing, setCommitting] = useState(false);
+  const [connected, setConnected] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [initialLoading, setInitialLoading] = useState(true);
   const esRef = useRef<EventSource | null>(null);
 
   const loadData = useCallback(async () => {
@@ -21,7 +24,12 @@ export function JobDetail({ id }: { id: string }) {
       setTasks(data.tasks);
       setLogs(data.logs);
       setArtifacts(data.artifacts);
-    } catch { /* ignore */ }
+      setLoadError('');
+    } catch (err) {
+      setLoadError(String(err));
+    } finally {
+      setInitialLoading(false);
+    }
   }, [id]);
 
   useEffect(() => {
@@ -38,6 +46,8 @@ export function JobDetail({ id }: { id: string }) {
         });
       }
     });
+    es.onerror = () => { setConnected(false); };
+    es.onopen = () => { setConnected(true); };
     esRef.current = es;
     return () => es.close();
   }, [id, loadData]);
@@ -60,7 +70,9 @@ export function JobDetail({ id }: { id: string }) {
     }
   };
 
-  if (!job) return <div>Loading...</div>;
+  if (initialLoading) return <div>Loading...</div>;
+  if (loadError) return <div style={{ color: 'red' }}>Error loading job: {loadError}. <a href="/">Back to jobs list</a></div>;
+  if (!job) return <div>Job not found. <a href="/">Back to jobs list</a></div>;
 
   const diffArtifact = artifacts.find((a) => a.name === 'diff');
   const summaryArtifact = artifacts.find((a) => a.name === 'final_summary');
@@ -74,6 +86,7 @@ export function JobDetail({ id }: { id: string }) {
         <h2 style={{ margin: 0 }}>Job {id.slice(0, 8)}</h2>
         <StatusBadge status={job.status} />
         <span style={{ color: '#6b7280' }}>{job.phase}</span>
+        {!connected && <span style={{ color: '#f59e0b', fontStyle: 'italic' }}>Reconnecting…</span>}
         {canCancel && <button onClick={handleCancel} style={{ marginLeft: 'auto' }}>Cancel</button>}
       </div>
 
