@@ -6,9 +6,9 @@ export function NewJob() {
   const [request, setRequest] = useState('');
   const [branchName, setBranchName] = useState('');
   const [maxRounds, setMaxRounds] = useState(3);
-  const [plannerModel, setPlannerModel] = useState('openai/gpt-4.1');
-  const [coderModel, setCoderModel] = useState('ollama/qwen3-coder:9b');
-  const [reviewerModel, setReviewerModel] = useState('openai/gpt-4.1');
+  const [plannerModel, setPlannerModel] = useState('azure-custom/gpt-4.1');
+  const [coderModel, setCoderModel] = useState('it-olama/qwen2.5:14b-instruct');
+  const [reviewerModel, setReviewerModel] = useState('azure-custom/gpt-4.1-mini');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
