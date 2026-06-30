@@ -344,12 +344,14 @@ async function runLoggedCommand(
     onStdout: (chunk) => {
       lastActivityAt = Date.now();
       streamedStdout = true;
+      process.stdout.write(chunk);
       db.addLog(jobId, taskId, phase, 'stdout', chunk);
       appendLogLine(logFilePath, 'stdout', chunk);
     },
     onStderr: (chunk) => {
       lastActivityAt = Date.now();
       streamedStderr = true;
+      process.stderr.write(chunk);
       db.addLog(jobId, taskId, phase, 'stderr', chunk);
       appendLogLine(logFilePath, 'stderr', chunk);
     }
