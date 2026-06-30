@@ -86,7 +86,8 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
       config.commandTimeoutMs,
       logFilePath,
       'opencode',
-      ['run', '--agent', 'planner', plannerPrompt(job.request)]
+      ['run', '--agent', 'planner', plannerPrompt(job.request)],
+      true
     );
     if (planner.code !== 0) throw new Error(commandFailureMessage('opencode planner', planner));
 
@@ -143,7 +144,8 @@ async function runTask(
       timeoutMs,
       logFilePath,
       'opencode',
-      ['run', '--agent', 'coder9b', coderPrompt(task, feedback)]
+      ['run', '--agent', 'coder9b', coderPrompt(task, feedback)],
+      true
     );
     if (coder.code !== 0) {
       db.updateTask(task.id, { status: 'failed', failureReason: commandFailureMessage('opencode coder9b', coder) });
@@ -181,7 +183,8 @@ async function runTask(
       timeoutMs,
       logFilePath,
       'opencode',
-      ['run', '--agent', 'reviewer', reviewerPrompt(task, verify, diff.stdout, changedFiles.stdout)]
+      ['run', '--agent', 'reviewer', reviewerPrompt(task, verify, diff.stdout, changedFiles.stdout)],
+      true
     );
     if (reviewer.code !== 0) {
       db.updateTask(task.id, { status: 'failed', failureReason: commandFailureMessage('opencode reviewer', reviewer) });
