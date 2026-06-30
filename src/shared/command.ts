@@ -50,7 +50,13 @@ export function runCommand(command: string, args: string[], options: RunCommandO
         cwd: options.cwd,
         shell: options.shell ?? false,
         windowsHide: true,
-        env: process.env
+        env: {
+          ...process.env,
+          TERM: 'xterm-256color',
+          FORCE_COLOR: '1',
+          NODE_NO_WARNINGS: '1'
+        },
+        stdio: ['pipe', 'overlapped', 'overlapped']
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
