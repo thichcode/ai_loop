@@ -73,7 +73,8 @@ export function ensureOpenCodeConfig(repoPath: string, models: OpenCodeModels): 
     }
   };
 
-  writeIfMissing(repoPath, CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, created, skipped);
+  writeFileSync(path.join(repoPath, CONFIG_PATH), `${JSON.stringify(config, null, 2)}\n`);
+  created.push(CONFIG_PATH);
 
   const promptFiles = [
     {
