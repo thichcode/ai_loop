@@ -41,6 +41,10 @@ export async function retryJob(id: string): Promise<{ job: JobRecord }> {
   return fetchJson(`/api/jobs/${id}/retry`, { method: 'POST' });
 }
 
+export async function cloneJob(id: string): Promise<{ job: JobRecord }> {
+  return fetchJson(`/api/jobs/${id}/clone`, { method: 'POST' });
+}
+
 export async function commitJob(id: string, message: string): Promise<{ ok: boolean }> {
   return fetchJson(`/api/jobs/${id}/commit`, {
     method: 'POST',

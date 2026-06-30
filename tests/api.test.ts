@@ -114,6 +114,24 @@ describe('api', () => {
     expect(retry.json().job.finishedAt).toBeNull();
   });
 
+  it('clones a done job', async () => {
+    const workspaceRoot = path.join(tmpdir(), `oc-api-root-${Date.now()}`);
+    const repo = path.join(workspaceRoot, 'repo');
+    mkdirSync(repo, { recursive: true });
+    const db = createDb(':memory:');
+    const job = db.createJob({ repoPath: repo, request: 'Original request', maxRounds: 3, plannerModel: 'p', coderModel: 'c', reviewerModel: 'r' });
+    const app = buildServer(db, { workspaceRoot, commandTimeoutMs: 1000 });
+
+    const clone = await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/clone` });
+
+    expect(clone.statusCode).toBe(200);
+    expect(clone.json().job.id).not.toBe(job.id);
+    expect(clone.json().job.request).toBe('Original request');
+    expect(clone.json().job.maxRounds).toBe(3);
+    expect(clone.json().job.status).toBe('queued');
+    expect(clone.json().job.repoPath).toBe(job.repoPath);
+  });
+
   it('rejects retry for a queued job', async () => {
     const workspaceRoot = path.join(tmpdir(), `oc-api-root-${Date.now()}`);
     const repo = path.join(workspaceRoot, 'repo');

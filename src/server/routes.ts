@@ -200,6 +200,23 @@ export function buildServer(db: AppDb, options: ServerOptions) {
     return { job: updated };
   });
 
+  app.post('/api/jobs/:id/clone', async (request, reply) => {
+    const { id } = paramsSchema.parse(request.params);
+    const job = db.getJob(id);
+    if (!job) return reply.code(404).send({ error: 'Job not found' });
+
+    const cloned = db.createJob({
+      repoPath: job.repoPath,
+      request: job.request,
+      branchName: job.branchName || undefined,
+      maxRounds: job.maxRounds,
+      plannerModel: job.plannerModel,
+      coderModel: job.coderModel,
+      reviewerModel: job.reviewerModel
+    });
+    return { job: cloned };
+  });
+
   return app;
 }
 

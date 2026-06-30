@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { getJob, cancelJob, commitJob, retryJob, openJobStream } from '../api';
+import { getJob, cancelJob, commitJob, retryJob, cloneJob, openJobStream } from '../api';
 import { StatusBadge } from '../components/StatusBadge';
 import { LogViewer } from '../components/LogViewer';
 import { DiffViewer } from '../components/DiffViewer';
@@ -62,6 +62,11 @@ export function JobDetail({ id }: { id: string }) {
     loadData();
   };
 
+  const handleClone = async () => {
+    const { job } = await cloneJob(id);
+    window.location.href = `/jobs/${job.id}`;
+  };
+
   const handleCommit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCommitting(true);
@@ -95,6 +100,7 @@ export function JobDetail({ id }: { id: string }) {
         {!connected && <span style={{ color: '#f59e0b', fontStyle: 'italic' }}>Reconnecting…</span>}
         {canCancel && <button onClick={handleCancel} style={{ marginLeft: 'auto' }}>Cancel</button>}
         {canRetry && <button onClick={handleRetry}>Retry</button>}
+        {canRetry && <button onClick={handleClone}>Clone</button>}
       </div>
 
       <div style={{ marginBottom: 8 }}>
