@@ -412,7 +412,7 @@ function isPlannedTask(value: unknown): value is PlannedTask {
 }
 
 function plannerPrompt(request: string) {
-  return `Original user request:\n${request}\n\nCreate TASKS.md and tasks.json in the repository root. tasks.json must be a JSON array of objects with title, prompt, and verify fields.`;
+  return `Original user request:\n${request}\n\nCreate TASKS.md and tasks.json in the repository root. tasks.json must be a JSON array of objects with title, prompt, and verify fields.\n\nCRITICAL: Do NOT ask any clarifying questions. The user request above is complete. Directly generate the task files now.`;
 }
 
 function coderPrompt(task: TaskRecord, feedback: string) {
