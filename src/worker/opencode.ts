@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 export interface OpenCodeModels {
@@ -40,6 +40,9 @@ export function ensureOpenCodeConfig(repoPath: string, models: OpenCodeModels): 
 
   const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || 'https://your-ollama-endpoint/v1';
   const azureBaseUrl = process.env.AZURE_BASE_URL || 'https://your-azure-proxy/v1';
+
+  if (!process.env.OLLAMA_BASE_URL) console.warn('WARN OLLAMA_BASE_URL not set in .env — using placeholder');
+  if (!process.env.AZURE_BASE_URL) console.warn('WARN AZURE_BASE_URL not set in .env — using placeholder');
 
   const config: Record<string, unknown> = {
     $schema: 'https://opencode.ai/config.json',
@@ -98,32 +101,13 @@ export function ensureOpenCodeConfig(repoPath: string, models: OpenCodeModels): 
   ];
 
   for (const promptFile of promptFiles) {
-    writeIfMissing(
-      repoPath,
-      promptFile.relativePath,
-      `---\ndescription: ${promptFile.description}\nmode: primary\nmodel: ${promptFile.model}\n---\n\n${promptFile.body}`,
-      created,
-      skipped
+    const absolutePath = path.join(repoPath, promptFile.relativePath);
+    writeFileSync(
+      absolutePath,
+      `---\ndescription: ${promptFile.description}\nmode: primary\nmodel: ${promptFile.model}\n---\n\n${promptFile.body}`
     );
+    created.push(promptFile.relativePath);
   }
 
   return { created, skipped };
-}
-
-function writeIfMissing(
-  repoPath: string,
-  relativePath: string,
-  contents: string,
-  created: string[],
-  skipped: string[]
-) {
-  const absolutePath = path.join(repoPath, relativePath);
-
-  if (existsSync(absolutePath)) {
-    skipped.push(relativePath);
-    return;
-  }
-
-  writeFileSync(absolutePath, contents);
-  created.push(relativePath);
 }

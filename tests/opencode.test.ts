@@ -35,7 +35,7 @@ describe('ensureOpenCodeConfig', () => {
     expect(result.skipped).toEqual([]);
   });
 
-  it('overwrites opencode.json but not prompt files', () => {
+  it('overwrites opencode.json and all prompt files when they exist', () => {
     const repoPath = makeRepoPath();
     const configPath = path.join(repoPath, '.opencode', 'opencode.json');
     const plannerPath = path.join(repoPath, '.opencode', 'agent', 'planner.md');
@@ -48,11 +48,14 @@ describe('ensureOpenCodeConfig', () => {
     const config = JSON.parse(readFileSync(configPath, 'utf8'));
     expect(config.$schema).toBe('https://opencode.ai/config.json');
     expect(config.model).toBe('planner/model');
-    expect(readFileSync(plannerPath, 'utf8')).toBe('existing planner prompt\n');
+    expect(readFileSync(plannerPath, 'utf8')).toContain('model: planner/model');
     expect(existsSync(path.join(repoPath, '.opencode', 'agent', 'coder9b.md'))).toBe(true);
     expect(existsSync(path.join(repoPath, '.opencode', 'agent', 'reviewer.md'))).toBe(true);
     expect(result.created).toContain('.opencode/opencode.json');
-    expect(result.skipped).toEqual(['.opencode/agent/planner.md']);
+    expect(result.created).toContain('.opencode/agent/planner.md');
+    expect(result.created).toContain('.opencode/agent/coder9b.md');
+    expect(result.created).toContain('.opencode/agent/reviewer.md');
+    expect(result.skipped).toEqual([]);
   });
 
   it('writes schema and supplied model values to opencode.json without prompt paths', () => {
