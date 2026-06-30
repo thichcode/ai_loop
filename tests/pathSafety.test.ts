@@ -38,4 +38,14 @@ describe('resolveRepoPathUnderRoot', () => {
 
     expect(result.ok).toBe(false);
   });
+
+  it('allows any path when workspace root is not set', () => {
+    const repo = path.join(tmpdir(), `oc-any-${Date.now()}`);
+    mkdirSync(repo, { recursive: true });
+
+    const result = resolveRepoPathUnderRoot(repo, undefined);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.path).toBe(realpathSync(repo));
+  });
 });

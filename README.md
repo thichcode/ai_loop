@@ -27,16 +27,16 @@ npm run init-opencode
 
 ### Terminal 1 — API server + Web UI
 ```bash
-set WORKSPACE_ROOT=C:\Users\YourName\repos
 npm run dev
 ```
 Mở trình duyệt tại `http://localhost:5173`
 
 ### Terminal 2 — Worker (xử lý job)
 ```bash
-set WORKSPACE_ROOT=C:\Users\YourName\repos
 npm run worker
 ```
+
+> **Lưu ý về `WORKSPACE_ROOT`:** Mặc định không cần set — bạn có thể dùng bất kỳ thư mục nào. Nếu muốn giới hạn chỉ cho phép repo trong một thư mục nhất định, set biến môi trường `WORKSPACE_ROOT`.
 
 ---
 
@@ -47,9 +47,10 @@ npm run worker
 ### Bước 2: Điền form
 
 ![New Job Form](screenshots/02-new-job.png)
+
 | Field | Ví dụ |
 |-------|-------|
-| Repository Path | `C:\Users\You\repos\my-project` (phải nằm trong `WORKSPACE_ROOT`) |
+| Repository Path | `C:\Users\You\repos\my-project` |
 | Coding Request | `Thêm API GET /users trả về danh sách user từ database` |
 | Branch Name (optional) | `feature/users-api` |
 | Max Rounds | `3` |
@@ -76,7 +77,7 @@ Browser ──REST/SSE──► Fastify API ──SQLite──► orchestrator.d
                            │
 Worker ──poll queue──► claimNextJob()
   │
-  ├── validate repo path (an toàn dưới WORKSPACE_ROOT)
+  ├── validate repo path (nếu WORKSPACE_ROOT được set)
   ├── git status, git switch -c <branch>
   ├── opencode run --agent planner  →  TASKS.md + tasks.json
   │
@@ -94,7 +95,7 @@ Worker ──poll queue──► claimNextJob()
 
 | Variable | Required | Default | Mô tả |
 |----------|----------|---------|-------|
-| `WORKSPACE_ROOT` | **Có** | — | Thư mục gốc chứa repo được phép dùng |
+| `WORKSPACE_ROOT` | Không | — | Giới hạn repo path (bỏ trống = cho phép mọi path) |
 | `PORT` | Không | `3000` | Cổng API server |
 | `DATABASE_PATH` | Không | `.oc-web/orchestrator.db` | File SQLite |
 | `COMMAND_TIMEOUT_MS` | Không | `1800000` (30 phút) | Timeout mỗi lệnh |
@@ -111,7 +112,7 @@ Worker ──poll queue──► claimNextJob()
 | `npm run start` | Chạy production server (cần build trước) |
 | `npm run worker` | Chạy worker process riêng |
 | `npm run init-opencode` | Tạo `.opencode/opencode.json` + agent prompts |
-| `npm test` | Chạy 40 test |
+| `npm test` | Chạy 39-40 test |
 
 ---
 
@@ -132,7 +133,7 @@ Worker ──poll queue──► claimNextJob()
 
 ## 8. An toàn
 
-- ✅ Chỉ cho phép repo path dưới `WORKSPACE_ROOT`
+- ✅ Chỉ cho phép repo path dưới `WORKSPACE_ROOT` (nếu được set)
 - ✅ Không auto-push, không auto-commit (phải bấm Commit)
 - ✅ Git status dirty vẫn chạy được, không mất code
 - ✅ Diff hiển thị trước khi commit
@@ -146,8 +147,8 @@ Worker ──poll queue──► claimNextJob()
 
 | Vấn đề | Giải pháp |
 |--------|-----------|
-| `WORKSPACE_ROOT is required` | Set biến môi trường trước khi chạy |
-| `Repository path must be under WORKSPACE_ROOT` | Path repo phải nằm trong thư mục đã chỉ định |
+| `Repository path does not exist` | Đường dẫn bạn nhập không tồn tại, kiểm tra lại |
+| `Repository path must be under WORKSPACE_ROOT` | Path nằm ngoài `WORKSPACE_ROOT` — bỏ `WORKSPACE_ROOT` hoặc chọn path khác |
 | `opencode: command not found` | Cài OpenCode CLI: `npm install -g @opencode-ai/cli` |
 | Worker không chạy | Kiểm tra `WORKSPACE_ROOT` đã set, thư mục parent của DB tồn tại |
 | Verify command fail | Sửa command verify trong `tasks.json` do planner tạo |

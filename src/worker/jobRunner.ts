@@ -10,7 +10,7 @@ type AppDb = ReturnType<typeof createDb>;
 type CommandRunner = (command: string, args: string[], options: RunCommandOptions) => Promise<RunCommandResult>;
 
 export interface JobRunnerConfig {
-  workspaceRoot: string;
+  workspaceRoot?: string;
   commandTimeoutMs: number;
 }
 

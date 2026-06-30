@@ -7,7 +7,7 @@ import { resolveRepoPathUnderRoot } from '../shared/pathSafety';
 type AppDb = ReturnType<typeof createDb>;
 
 export interface ServerOptions {
-  workspaceRoot: string;
+  workspaceRoot?: string;
   commandTimeoutMs: number;
 }
 
