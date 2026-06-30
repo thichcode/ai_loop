@@ -38,10 +38,34 @@ export function ensureOpenCodeConfig(repoPath: string, models: OpenCodeModels): 
 
   mkdirSync(path.join(repoPath, '.opencode', 'agent'), { recursive: true });
 
-  const config = {
+  const ollamaBaseUrl = process.env.OLLAMA_BASE_URL || 'https://your-ollama-endpoint/v1';
+  const azureBaseUrl = process.env.AZURE_BASE_URL || 'https://your-azure-proxy/v1';
+
+  const config: Record<string, unknown> = {
     $schema: 'https://opencode.ai/config.json',
     plugin: ['superpowers@git+https://github.com/obra/superpowers.git'],
     model: models.plannerModel,
+    provider: {
+      'it-olama': {
+        name: 'it-olama',
+        npm: '@ai-sdk/openai-compatible',
+        options: { baseURL: ollamaBaseUrl },
+        models: {
+          'qwen2.5:14b-instruct': { name: 'qwen2.5:14b-instruct' },
+          'qwen3.5:9b': { name: 'qwen3.5:9b' },
+          'gemma4:12b-it-qat': { name: 'gemma4:12b-it-qat' }
+        }
+      },
+      'azure-custom': {
+        name: 'azure-custom',
+        npm: '@ai-sdk/openai-compatible',
+        options: { baseURL: azureBaseUrl },
+        models: {
+          'gpt-4.1': { name: 'gpt-4.1' },
+          'gpt-4.1-mini': { name: 'gpt-4.1-mini' }
+        }
+      }
+    },
     agent: {
       planner: { model: models.plannerModel },
       coder9b: { model: models.coderModel },

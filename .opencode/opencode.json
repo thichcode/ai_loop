@@ -3,16 +3,35 @@
   "plugin": [
     "superpowers@git+https://github.com/obra/superpowers.git"
   ],
-  "model": "openai/gpt-4.1",
-  "agent": {
-    "planner": {
-      "model": "openai/gpt-4.1"
+  "model": "azure-custom/gpt-4.1",
+  "provider": {
+    "it-olama": {
+      "name": "it-olama",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://your-ollama-endpoint/v1"
+      },
+      "models": {
+        "qwen2.5:14b-instruct": { "name": "qwen2.5:14b-instruct" },
+        "qwen3.5:9b": { "name": "qwen3.5:9b" },
+        "gemma4:12b-it-qat": { "name": "gemma4:12b-it-qat" }
+      }
     },
-    "coder9b": {
-      "model": "ollama/qwen3-coder:9b"
-    },
-    "reviewer": {
-      "model": "openai/gpt-4.1"
+    "azure-custom": {
+      "name": "azure-custom",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://your-azure-proxy/v1"
+      },
+      "models": {
+        "gpt-4.1": { "name": "gpt-4.1" },
+        "gpt-4.1-mini": { "name": "gpt-4.1-mini" }
+      }
     }
+  },
+  "agent": {
+    "planner": { "model": "azure-custom/gpt-4.1" },
+    "coder9b": { "model": "it-olama/qwen2.5:14b-instruct" },
+    "reviewer": { "model": "azure-custom/gpt-4.1-mini" }
   }
 }

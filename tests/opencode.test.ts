@@ -68,6 +68,9 @@ describe('ensureOpenCodeConfig', () => {
     expect(config.agent.coder9b.prompt).toBeUndefined();
     expect(config.agent.reviewer.prompt).toBeUndefined();
     expect(JSON.stringify(config)).not.toContain('.opencode/agent/');
+    expect(config.provider).toBeDefined();
+    expect(config.provider['it-olama']).toBeDefined();
+    expect(config.provider['azure-custom']).toBeDefined();
   });
 
   it('writes agent files with frontmatter and corresponding model values', () => {
