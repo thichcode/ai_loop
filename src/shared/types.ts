@@ -22,6 +22,7 @@ export interface JobRecord extends CreateJobInput {
   updatedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+  tokenUsage: string | null;
 }
 
 export interface TaskRecord {

@@ -27,6 +27,7 @@ interface JobRow {
   updated_at: string;
   started_at: string | null;
   finished_at: string | null;
+  token_usage: string | null;
 }
 
 interface TaskRow {
@@ -146,7 +147,7 @@ export function createDb(databasePath: string) {
 
     updateJob(
       id: string,
-      patch: Partial<Pick<JobRecord, 'status' | 'phase' | 'error' | 'startedAt' | 'finishedAt' | 'cancelRequested'>>
+      patch: Partial<Pick<JobRecord, 'status' | 'phase' | 'error' | 'startedAt' | 'finishedAt' | 'cancelRequested' | 'tokenUsage'>>
     ): JobRecord | null {
       const fields: string[] = [];
       const values: unknown[] = [];
@@ -175,6 +176,10 @@ export function createDb(databasePath: string) {
       if (patch.cancelRequested !== undefined) {
         fields.push('cancel_requested = ?');
         values.push(patch.cancelRequested ? 1 : 0);
+      }
+      if (patch.tokenUsage !== undefined) {
+        fields.push('token_usage = ?');
+        values.push(patch.tokenUsage);
       }
 
       if (fields.length === 0) return getJob(id);
@@ -363,6 +368,8 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_job_artifacts_job_id_created_at ON job_artifacts(job_id, created_at DESC, id DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_job_artifacts_unique_logical_name ON job_artifacts(job_id, ifnull(task_id, ''), name);
   `);
+
+  try { db.exec('ALTER TABLE jobs ADD COLUMN token_usage TEXT'); } catch {}
 }
 
 function mapJob(row: JobRow): JobRecord {
@@ -382,7 +389,8 @@ function mapJob(row: JobRow): JobRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     startedAt: row.started_at,
-    finishedAt: row.finished_at
+    finishedAt: row.finished_at,
+    tokenUsage: row.token_usage
   };
 }
 

@@ -21,7 +21,11 @@ const plannerPrompt = `You are the planner for the OpenCode Web Orchestrator.
 
 Create a TASKS.md file and a tasks.json file for the requested work. The tasks.json file must be a JSON array where each item has exactly these fields: title, prompt, verify. Keep tasks independently executable and include a concrete verification command for each task.
 
-CRITICAL: DO NOT ask clarifying questions. The user's request is complete. Directly create TASKS.md and tasks.json based on the user's original request. Do NOT scan all files — only read *.md files if you need context.
+CRITICAL INSTRUCTIONS:
+- Do NOT use any skills or brainstorming. Use the Read, Glob, and Write tools directly.
+- Do NOT ask clarifying questions. The user's request is complete.
+- Do NOT scan all files — only read *.md files if you need context.
+- Directly create TASKS.md and tasks.json and finish.
 `;
 
 const coderPrompt = `You are the coder for the OpenCode Web Orchestrator.

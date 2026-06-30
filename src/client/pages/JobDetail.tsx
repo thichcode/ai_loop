@@ -119,6 +119,10 @@ export function JobDetail({ id }: { id: string }) {
       <div style={{ marginBottom: 8 }}>
         <strong>Repo:</strong> {job.repoPath}
         {job.branchName && <> | <strong>Branch:</strong> {job.branchName}</>}
+        {job.tokenUsage && (() => {
+          const t = JSON.parse(job.tokenUsage);
+          return <> | <strong>Tokens:</strong> {t.input ?? '?'} in / {t.output ?? '?'} out{t.inputTokensPerSec ? ` (${t.inputTokensPerSec} in/s, ${t.outputTokensPerSec} out/s)` : ''}</>;
+        })()}
       </div>
 
       <h3>Tasks</h3>

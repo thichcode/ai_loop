@@ -80,7 +80,8 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
     db.addLog(job.id, null, 'git', 'system', `OpenCode config skipped: ${opencodeConfig.skipped.join(', ') || 'none'}`);
 
     db.updateJob(job.id, { phase: 'planning' });
-    const planner = await runLoggedCommand(
+    db.addLog(job.id, null, 'planning', 'system', 'Starting opencode planner...');
+    const planner = await withRetry('opencode planner', () => runLoggedCommand(
       db,
       job.id,
       null,
@@ -93,8 +94,11 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
       ['run', '--agent', 'planner', plannerPrompt(job.request)],
       true,
       progressIntervalMs
-    );
-    if (planner.code !== 0) throw new Error(commandFailureMessage('opencode planner', planner));
+    ), db, job.id, 'planning', logFilePath);
+    if (planner.code !== 0) {
+      const err = commandFailureMessage('opencode planner', planner);
+      throw new Error(err);
+    }
 
     const tasks = readPlannedTasks(repoPath, db, job.id, logFilePath);
     const taskRecords = tasks.map((task, index) => db.createTask(job.id, index, task));
@@ -360,6 +364,16 @@ async function runLoggedCommand(
 
   if (result.stdout && !streamedStdout) { db.addLog(jobId, taskId, phase, 'stdout', result.stdout); appendLogLine(logFilePath, 'stdout', result.stdout); }
   if (result.stderr && !streamedStderr) { db.addLog(jobId, taskId, phase, 'stderr', result.stderr); appendLogLine(logFilePath, 'stderr', result.stderr); }
+
+  if (command === 'opencode') {
+    const tokens = parseTokenUsage(result, phase);
+    if (tokens) {
+      const existing = db.getJob(jobId)?.tokenUsage;
+      const merged = mergeTokenUsage(existing, tokens);
+      db.updateJob(jobId, { tokenUsage: JSON.stringify(merged) });
+    }
+  }
+
   await throwIfCancelled(db, jobId);
   return result;
 }
@@ -449,4 +463,88 @@ function reviewerPrompt(task: TaskRecord, verify: RunCommandResult, diff: string
 
 function commandFailureMessage(label: string, result: RunCommandResult) {
   return `${label} failed with exit code ${result.code}${result.timedOut ? ' (timed out)' : ''}: ${result.stderr || result.stdout}`;
+}
+
+interface TokenData {
+  input: number;
+  output: number;
+  inputTokensPerSec?: number;
+  outputTokensPerSec?: number;
+}
+
+function parseTokenUsage(result: RunCommandResult, phase: string): TokenData | null {
+  const text = `${result.stderr}\n${result.stdout}`;
+  const duration = phase === 'planning' ? parseDuration(result.stderr) : undefined;
+
+  const jsonMatch = text.match(/"prompt_tokens"?\s*:\s*(\d+)[^}]*"completion_tokens"?\s*:\s*(\d+)/);
+  if (jsonMatch) {
+    const input = Number(jsonMatch[1]);
+    const output = Number(jsonMatch[2]);
+    const elapsed = duration ?? 1;
+    return { input, output, inputTokensPerSec: Math.round(input / elapsed), outputTokensPerSec: Math.round(output / elapsed) };
+  }
+
+  const simpleMatch = text.match(/tokens?[:\s]+(\d+)\s+in[,\s]+(\d+)\s+out/i);
+  if (simpleMatch) {
+    const input = Number(simpleMatch[1]);
+    const output = Number(simpleMatch[2]);
+    const elapsed = duration ?? 1;
+    return { input, output, inputTokensPerSec: Math.round(input / elapsed), outputTokensPerSec: Math.round(output / elapsed) };
+  }
+
+  const input = Math.round(countChars(text) / 4);
+  const output = Math.round(countChars(result.stdout) / 4);
+  if (input > 0 || output > 0) {
+    const elapsed = duration ?? 1;
+    return { input, output, inputTokensPerSec: Math.round(input / elapsed), outputTokensPerSec: Math.round(output / elapsed) };
+  }
+
+  return null;
+}
+
+function parseDuration(text: string): number | undefined {
+  const match = text.match(/(\d+)s elapsed/);
+  if (match) return Math.max(1, Number(match[1]));
+  return undefined;
+}
+
+function countChars(s: string): number {
+  return s.replace(/\x1b\[[0-9;]*m/g, '').length;
+}
+
+function mergeTokenUsage(existing: string | null | undefined, newTokens: TokenData): TokenData {
+  if (!existing || existing === 'null') return newTokens;
+  try {
+    const prev = JSON.parse(existing) as TokenData;
+    return {
+      input: prev.input + newTokens.input,
+      output: prev.output + newTokens.output,
+      inputTokensPerSec: Math.round((prev.input + newTokens.input) / 2),
+      outputTokensPerSec: Math.round((prev.output + newTokens.output) / 2)
+    };
+  } catch {
+    return newTokens;
+  }
+}
+
+async function withRetry<T>(
+  label: string,
+  fn: () => Promise<T>,
+  db: AppDb,
+  jobId: string,
+  phase: string,
+  logFilePath: string,
+  maxRetries = 2
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt === maxRetries) throw error;
+      const msg = `[${label}] Attempt ${attempt}/${maxRetries} failed, retrying...`;
+      db.addLog(jobId, null, phase, 'system', msg);
+      appendLogLine(logFilePath, 'system', msg);
+    }
+  }
+  throw new Error('unreachable');
 }
