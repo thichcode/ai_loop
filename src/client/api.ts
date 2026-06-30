@@ -60,5 +60,6 @@ export function openJobStream(id: string, onEvent: (event: string, data: unknown
   es.addEventListener('tasks', (e) => onEvent('tasks', JSON.parse((e as MessageEvent).data)));
   es.addEventListener('log', (e) => onEvent('log', JSON.parse((e as MessageEvent).data)));
   es.addEventListener('artifact', (e) => onEvent('artifact', JSON.parse((e as MessageEvent).data)));
+  es.addEventListener('heartbeat', (e) => onEvent('heartbeat', JSON.parse((e as MessageEvent).data)));
   return es;
 }

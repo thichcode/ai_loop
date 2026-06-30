@@ -12,6 +12,7 @@ type CommandRunner = (command: string, args: string[], options: RunCommandOption
 export interface JobRunnerConfig {
   workspaceRoot?: string;
   commandTimeoutMs: number;
+  commandProgressIntervalMs?: number;
 }
 
 export interface JobRunnerDeps {
@@ -29,6 +30,7 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
   let repoPath: string | null = null;
   let logFilePath = '';
   let finalError: string | null = null;
+  const progressIntervalMs = config.commandProgressIntervalMs ?? 10_000;
 
   try {
     await throwIfCancelled(db, job.id);
@@ -44,7 +46,7 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
     await throwIfCancelled(db, job.id);
 
     db.updateJob(job.id, { phase: 'git' });
-    const gitStatus = await runLoggedCommand(db, job.id, null, 'git', runCommand, repoPath, config.commandTimeoutMs, logFilePath, 'git', ['status', '--short']);
+    const gitStatus = await runLoggedCommand(db, job.id, null, 'git', runCommand, repoPath, config.commandTimeoutMs, logFilePath, 'git', ['status', '--short'], false, progressIntervalMs);
     const isGit = gitStatus.code === 0;
     if (!isGit) {
       db.addLog(job.id, null, 'git', 'system', 'Not a git repository, skipping git phase');
@@ -60,7 +62,9 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
         config.commandTimeoutMs,
         logFilePath,
         'git',
-        ['switch', '-c', job.branchName]
+        ['switch', '-c', job.branchName],
+        false,
+        progressIntervalMs
       );
       if (branch.code !== 0) throw new Error(commandFailureMessage(`git switch -c ${job.branchName}`, branch));
     }
@@ -87,7 +91,8 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
       logFilePath,
       'opencode',
       ['run', '--agent', 'planner', plannerPrompt(job.request)],
-      true
+      true,
+      progressIntervalMs
     );
     if (planner.code !== 0) throw new Error(commandFailureMessage('opencode planner', planner));
 
@@ -96,10 +101,10 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
     db.upsertArtifact(job.id, null, 'planning_tasks', JSON.stringify(tasks, null, 2));
 
     for (const task of taskRecords) {
-      await runTask(db, job, task, repoPath, config.commandTimeoutMs, logFilePath, runCommand);
+      await runTask(db, job, task, repoPath, config.commandTimeoutMs, logFilePath, runCommand, progressIntervalMs);
     }
 
-    await finalizeJob(db, job, repoPath, config.commandTimeoutMs, logFilePath, runCommand, null);
+    await finalizeJob(db, job, repoPath, config.commandTimeoutMs, logFilePath, runCommand, null, progressIntervalMs);
   } catch (error) {
     if (error instanceof CancelledError) {
       db.updateJob(job.id, { status: 'cancelled', phase: 'cancelled', finishedAt: new Date().toISOString() });
@@ -110,7 +115,7 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
     finalError = error instanceof Error ? error.message : String(error);
     db.addLog(job.id, null, db.getJob(job.id)?.phase ?? 'failed', 'system', finalError);
     if (repoPath) {
-      await finalizeJob(db, job, repoPath, config.commandTimeoutMs, logFilePath, runCommand, finalError);
+      await finalizeJob(db, job, repoPath, config.commandTimeoutMs, logFilePath, runCommand, finalError, progressIntervalMs);
     } else {
       db.updateJob(job.id, { status: 'failed', error: finalError, finishedAt: new Date().toISOString() });
     }
@@ -124,7 +129,8 @@ async function runTask(
   repoPath: string,
   timeoutMs: number,
   logFilePath: string,
-  runCommand: CommandRunner
+  runCommand: CommandRunner,
+  progressIntervalMs: number
 ) {
   let feedback = '';
 
@@ -145,7 +151,8 @@ async function runTask(
       logFilePath,
       'opencode',
       ['run', '--agent', 'coder9b', coderPrompt(task, feedback)],
-      true
+      true,
+      progressIntervalMs
     );
     if (coder.code !== 0) {
       db.updateTask(task.id, { status: 'failed', failureReason: commandFailureMessage('opencode coder9b', coder) });
@@ -164,11 +171,12 @@ async function runTask(
       logFilePath,
       task.verifyCommand,
       [],
-      true
+      true,
+      progressIntervalMs
     );
 
-    const diff = await collectGitOutput(db, job.id, task.id, 'git diff', repoPath, timeoutMs, logFilePath, runCommand, ['diff']);
-    const changedFiles = await collectGitOutput(db, job.id, task.id, 'git diff --name-only', repoPath, timeoutMs, logFilePath, runCommand, ['diff', '--name-only']);
+    const diff = await collectGitOutput(db, job.id, task.id, 'git diff', repoPath, timeoutMs, logFilePath, runCommand, ['diff'], progressIntervalMs);
+    const changedFiles = await collectGitOutput(db, job.id, task.id, 'git diff --name-only', repoPath, timeoutMs, logFilePath, runCommand, ['diff', '--name-only'], progressIntervalMs);
     db.upsertArtifact(job.id, task.id, 'diff', diff.stdout);
     db.upsertArtifact(job.id, task.id, 'changed_files', changedFiles.stdout);
 
@@ -184,7 +192,8 @@ async function runTask(
       logFilePath,
       'opencode',
       ['run', '--agent', 'reviewer', reviewerPrompt(task, verify, diff.stdout, changedFiles.stdout)],
-      true
+      true,
+      progressIntervalMs
     );
     if (reviewer.code !== 0) {
       db.updateTask(task.id, { status: 'failed', failureReason: commandFailureMessage('opencode reviewer', reviewer) });
@@ -247,14 +256,15 @@ async function finalizeJob(
   timeoutMs: number,
   logFilePath: string,
   runCommand: CommandRunner,
-  setupError: string | null
+  setupError: string | null,
+  progressIntervalMs: number
 ) {
   await throwIfCancelled(db, job.id);
   db.updateJob(job.id, { phase: 'finalizing' });
 
   try {
-    const diff = await collectGitOutput(db, job.id, null, 'git diff', repoPath, timeoutMs, logFilePath, runCommand, ['diff']);
-    const changedFiles = await collectGitOutput(db, job.id, null, 'git diff --name-only', repoPath, timeoutMs, logFilePath, runCommand, ['diff', '--name-only']);
+    const diff = await collectGitOutput(db, job.id, null, 'git diff', repoPath, timeoutMs, logFilePath, runCommand, ['diff'], progressIntervalMs);
+    const changedFiles = await collectGitOutput(db, job.id, null, 'git diff --name-only', repoPath, timeoutMs, logFilePath, runCommand, ['diff', '--name-only'], progressIntervalMs);
     db.upsertArtifact(job.id, null, 'diff', diff.stdout);
     db.upsertArtifact(job.id, null, 'changed_files', changedFiles.stdout);
   } catch (error) {
@@ -288,9 +298,10 @@ async function collectGitOutput(
   timeoutMs: number,
   logFilePath: string,
   runCommand: CommandRunner,
-  args: string[]
+  args: string[],
+  progressIntervalMs: number
 ) {
-  const result = await runLoggedCommand(db, jobId, taskId, 'finalizing', runCommand, repoPath, timeoutMs, logFilePath, 'git', args);
+  const result = await runLoggedCommand(db, jobId, taskId, 'finalizing', runCommand, repoPath, timeoutMs, logFilePath, 'git', args, false, progressIntervalMs);
   if (result.code !== 0) db.addLog(jobId, taskId, 'finalizing', 'system', `${label} failed: ${result.stderr || result.stdout}`);
   return result;
 }
@@ -306,7 +317,8 @@ async function runLoggedCommand(
   logFilePath: string,
   command: string,
   args: string[],
-  shell = false
+  shell = false,
+  progressIntervalMs = 10_000
 ) {
   await throwIfCancelled(db, jobId);
   const line = `$ ${[command, ...args].join(' ')}`;
@@ -314,27 +326,55 @@ async function runLoggedCommand(
   appendLogLine(logFilePath, 'system', line);
   let streamedStdout = false;
   let streamedStderr = false;
+  const startedAt = Date.now();
+  let lastActivityAt = startedAt;
+  const heartbeat = progressIntervalMs > 0
+    ? setInterval(() => {
+      const now = Date.now();
+      const message = `Still running: ${commandLabel(command, args)} (${formatDuration(now - startedAt)} elapsed, no output for ${formatDuration(now - lastActivityAt)})`;
+      db.addLog(jobId, taskId, phase, 'system', message);
+      appendLogLine(logFilePath, 'system', message);
+    }, progressIntervalMs)
+    : undefined;
   const result = await runCommand(command, args, {
     cwd,
     timeoutMs,
     shell,
     isCancelled: () => db.getJob(jobId)?.cancelRequested ?? false,
     onStdout: (chunk) => {
+      lastActivityAt = Date.now();
       streamedStdout = true;
       db.addLog(jobId, taskId, phase, 'stdout', chunk);
       appendLogLine(logFilePath, 'stdout', chunk);
     },
     onStderr: (chunk) => {
+      lastActivityAt = Date.now();
       streamedStderr = true;
       db.addLog(jobId, taskId, phase, 'stderr', chunk);
       appendLogLine(logFilePath, 'stderr', chunk);
     }
   });
+  if (heartbeat) clearInterval(heartbeat);
 
   if (result.stdout && !streamedStdout) { db.addLog(jobId, taskId, phase, 'stdout', result.stdout); appendLogLine(logFilePath, 'stdout', result.stdout); }
   if (result.stderr && !streamedStderr) { db.addLog(jobId, taskId, phase, 'stderr', result.stderr); appendLogLine(logFilePath, 'stderr', result.stderr); }
   await throwIfCancelled(db, jobId);
   return result;
+}
+
+function commandLabel(command: string, args: string[]) {
+  if (command === 'opencode') {
+    const agentIndex = args.indexOf('--agent');
+    if (agentIndex >= 0 && args[agentIndex + 1]) return `opencode run --agent ${args[agentIndex + 1]}`;
+  }
+  return [command, ...args].join(' ');
+}
+
+function formatDuration(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
 async function throwIfCancelled(db: AppDb, jobId: string) {

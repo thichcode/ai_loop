@@ -15,6 +15,7 @@ export function JobDetail({ id }: { id: string }) {
   const [connected, setConnected] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [initialLoading, setInitialLoading] = useState(true);
+  const [heartbeatNow, setHeartbeatNow] = useState(new Date().toISOString());
   const esRef = useRef<EventSource | null>(null);
 
   const loadData = useCallback(async () => {
@@ -38,6 +39,7 @@ export function JobDetail({ id }: { id: string }) {
       if (event === 'job') setJob(data as JobRecord);
       if (event === 'tasks') setTasks(data as TaskRecord[]);
       if (event === 'log') setLogs((prev) => [...prev, data as JobLogRecord]);
+      if (event === 'heartbeat') setHeartbeatNow((data as { now: string }).now);
       if (event === 'artifact') {
         setArtifacts((prev) => {
           const existing = prev.findIndex((a) => a.name === (data as JobArtifactRecord).name && a.taskId === (data as JobArtifactRecord).taskId);
@@ -89,6 +91,13 @@ export function JobDetail({ id }: { id: string }) {
   const canCommit = job.status === 'done' || job.status === 'partial';
   const canCancel = job.status === 'queued' || job.status === 'running';
   const canRetry = job.status === 'done' || job.status === 'failed' || job.status === 'cancelled' || job.status === 'partial';
+  const nowMs = Date.parse(heartbeatNow);
+  const lastLog = logs.at(-1);
+  const liveStatus = job.status === 'queued'
+    ? 'Queued, waiting for worker'
+    : job.status === 'running'
+      ? `Running ${job.phase} · elapsed ${formatElapsed(nowMs - Date.parse(job.startedAt ?? job.createdAt))} · last log ${lastLog ? `${formatElapsed(nowMs - Date.parse(lastLog.createdAt))} ago` : 'none yet'}`
+      : '';
 
   return (
     <div>
@@ -97,6 +106,7 @@ export function JobDetail({ id }: { id: string }) {
         <h2 style={{ margin: 0 }}>Job {id.slice(0, 8)}</h2>
         <StatusBadge status={job.status} />
         <span style={{ color: '#6b7280' }}>{job.phase}</span>
+        {liveStatus && <span style={{ color: '#2563eb', fontSize: 12 }}>{liveStatus}</span>}
         {!connected && <span style={{ color: '#f59e0b', fontStyle: 'italic' }}>Reconnecting…</span>}
         {canCancel && <button onClick={handleCancel} style={{ marginLeft: 'auto' }}>Cancel</button>}
         {canRetry && <button onClick={handleRetry}>Retry</button>}
@@ -159,4 +169,11 @@ export function JobDetail({ id }: { id: string }) {
       )}
     </div>
   );
+}
+
+function formatElapsed(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }

@@ -144,6 +144,24 @@ describe('runJob', () => {
     expect(coderPrompts[1]).toContain('Add the missing assertion');
   });
 
+  it('logs command progress when a command stays silent', async () => {
+    const { workspaceRoot, repoPath } = makeWorkspace();
+    const db = makeDb();
+    const job = makeJob(db, repoPath);
+    const fake = makeFakeRunner(repoPath, ['APPROVED']);
+    const runCommand = async (command: string, args: string[], options: RunCommandOptions): Promise<RunCommandResult> => {
+      if (command === 'opencode' && args.includes('planner')) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      return fake.runCommand(command, args, options);
+    };
+
+    await runJob(db, job, { workspaceRoot, commandTimeoutMs: 1000, commandProgressIntervalMs: 5 }, { runCommand });
+
+    const logText = db.listLogs(job.id, 0, 1000).map((log) => log.message).join('\n');
+    expect(logText).toContain('Still running: opencode run --agent planner');
+  });
+
   it.each(['UNAPPROVED', 'This is not APPROVED'])('does not approve reviewer output %j', async (reviewerOutput) => {
     const { workspaceRoot, repoPath } = makeWorkspace();
     const db = makeDb();
