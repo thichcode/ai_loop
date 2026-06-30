@@ -44,10 +44,12 @@ export async function runJob(db: AppDb, job: JobRecord, config: JobRunnerConfig,
     await throwIfCancelled(db, job.id);
 
     db.updateJob(job.id, { phase: 'git' });
-    const status = await runLoggedCommand(db, job.id, null, 'git', runCommand, repoPath, config.commandTimeoutMs, logFilePath, 'git', ['status', '--short']);
-    if (status.code !== 0) throw new Error(commandFailureMessage('git status --short', status));
-
-    if (job.branchName) {
+    const gitStatus = await runLoggedCommand(db, job.id, null, 'git', runCommand, repoPath, config.commandTimeoutMs, logFilePath, 'git', ['status', '--short']);
+    const isGit = gitStatus.code === 0;
+    if (!isGit) {
+      db.addLog(job.id, null, 'git', 'system', 'Not a git repository, skipping git phase');
+      appendLogLine(logFilePath, 'system', 'Not a git repository, skipping git phase');
+    } else if (job.branchName) {
       const branch = await runLoggedCommand(
         db,
         job.id,
