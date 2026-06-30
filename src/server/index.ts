@@ -2,8 +2,10 @@ import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import fastifyStatic from '@fastify/static';
 import { createDb } from '../shared/db';
-import { loadConfig } from '../shared/config';
+import { loadConfig, loadEnvFile } from '../shared/config';
 import { buildServer } from './routes';
+
+loadEnvFile();
 
 const config = loadConfig();
 mkdirSync(path.dirname(config.databasePath), { recursive: true });

@@ -1,7 +1,9 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import { loadConfig } from '../shared/config';
+import { loadConfig, loadEnvFile } from '../shared/config';
 import { createDb } from '../shared/db';
 import { runJob } from './jobRunner';
+
+loadEnvFile();
 
 const config = loadConfig();
 const db = createDb(config.databasePath);
