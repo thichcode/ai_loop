@@ -13,7 +13,7 @@ Web UI để gửi coding request, hệ thống tự động plan → code → v
 ### Yêu cầu
 - Node.js 18+, npm, git
 - OpenCode CLI: `npm install -g @opencode-ai/cli`
-- Đã cấu hình OpenCode provider (ví dụ: `OPENAI_API_KEY`, hoặc Ollama local)
+- API key cho provider bạn dùng
 
 ### Clone & install
 ```bash
@@ -22,6 +22,30 @@ cd ai_loop
 npm install
 npm run init-opencode
 ```
+
+### Cấu hình provider
+
+Copy file `.env.example` thành `.env` và điền API key:
+
+```bash
+cp .env.example .env
+# Sửa .env với API key của bạn
+```
+
+Hoặc set trực tiếp trong terminal:
+
+```bash
+set OPENAI_API_KEY=sk-...          # nếu dùng OpenAI
+set ANTHROPIC_API_KEY=sk-...       # nếu dùng Claude
+```
+
+Nếu dùng **Ollama local**, không cần API key — chỉ cần [chạy Ollama](https://ollama.com) và pull model:
+
+```bash
+ollama pull qwen3-coder:9b
+```
+
+> Xem `.env.example` để biết danh sách đầy đủ các biến môi trường.
 
 ## 2. Chạy
 
