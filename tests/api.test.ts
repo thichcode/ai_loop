@@ -95,6 +95,38 @@ describe('api', () => {
     expect(db.listLogs(job.id)).toEqual([]);
   });
 
+  it('retries a done job', async () => {
+    const workspaceRoot = path.join(tmpdir(), `oc-api-root-${Date.now()}`);
+    const repo = path.join(workspaceRoot, 'repo');
+    mkdirSync(repo, { recursive: true });
+    const db = createDb(':memory:');
+    const job = db.createJob({ repoPath: repo, request: 'Do work', maxRounds: 1, plannerModel: 'p', coderModel: 'c', reviewerModel: 'r' });
+    db.updateJob(job.id, { status: 'done', phase: 'done', finishedAt: new Date().toISOString() });
+    const app = buildServer(db, { workspaceRoot, commandTimeoutMs: 1000 });
+
+    const retry = await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/retry` });
+
+    expect(retry.statusCode).toBe(200);
+    expect(retry.json().job.status).toBe('queued');
+    expect(retry.json().job.phase).toBe('queued');
+    expect(retry.json().job.error).toBeNull();
+    expect(retry.json().job.startedAt).toBeNull();
+    expect(retry.json().job.finishedAt).toBeNull();
+  });
+
+  it('rejects retry for a queued job', async () => {
+    const workspaceRoot = path.join(tmpdir(), `oc-api-root-${Date.now()}`);
+    const repo = path.join(workspaceRoot, 'repo');
+    mkdirSync(repo, { recursive: true });
+    const db = createDb(':memory:');
+    const job = db.createJob({ repoPath: repo, request: 'Do work', maxRounds: 1, plannerModel: 'p', coderModel: 'c', reviewerModel: 'r' });
+    const app = buildServer(db, { workspaceRoot, commandTimeoutMs: 1000 });
+
+    const retry = await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/retry` });
+
+    expect(retry.statusCode).toBe(409);
+  });
+
   it('requests cancellation for a running job', async () => {
     const workspaceRoot = path.join(tmpdir(), `oc-api-root-${Date.now()}`);
     const repo = path.join(workspaceRoot, 'repo');

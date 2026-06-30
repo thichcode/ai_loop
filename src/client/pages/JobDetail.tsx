@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { getJob, cancelJob, commitJob, openJobStream } from '../api';
+import { getJob, cancelJob, commitJob, retryJob, openJobStream } from '../api';
 import { StatusBadge } from '../components/StatusBadge';
 import { LogViewer } from '../components/LogViewer';
 import { DiffViewer } from '../components/DiffViewer';
@@ -57,6 +57,11 @@ export function JobDetail({ id }: { id: string }) {
     loadData();
   };
 
+  const handleRetry = async () => {
+    await retryJob(id);
+    loadData();
+  };
+
   const handleCommit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCommitting(true);
@@ -78,6 +83,7 @@ export function JobDetail({ id }: { id: string }) {
   const summaryArtifact = artifacts.find((a) => a.name === 'final_summary');
   const canCommit = job.status === 'done' || job.status === 'partial';
   const canCancel = job.status === 'queued' || job.status === 'running';
+  const canRetry = job.status === 'done' || job.status === 'failed' || job.status === 'cancelled' || job.status === 'partial';
 
   return (
     <div>
@@ -88,6 +94,7 @@ export function JobDetail({ id }: { id: string }) {
         <span style={{ color: '#6b7280' }}>{job.phase}</span>
         {!connected && <span style={{ color: '#f59e0b', fontStyle: 'italic' }}>Reconnecting…</span>}
         {canCancel && <button onClick={handleCancel} style={{ marginLeft: 'auto' }}>Cancel</button>}
+        {canRetry && <button onClick={handleRetry}>Retry</button>}
       </div>
 
       <div style={{ marginBottom: 8 }}>

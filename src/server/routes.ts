@@ -181,6 +181,25 @@ export function buildServer(db: AppDb, options: ServerOptions) {
     return { ok: true, add, commit };
   });
 
+  app.post('/api/jobs/:id/retry', async (request, reply) => {
+    const { id } = paramsSchema.parse(request.params);
+    const job = db.getJob(id);
+    if (!job) return reply.code(404).send({ error: 'Job not found' });
+    if (job.status === 'queued' || job.status === 'running') {
+      return reply.code(409).send({ error: 'Cannot retry a queued or running job' });
+    }
+
+    db.deleteJobTasks(id);
+    const updated = db.updateJob(id, {
+      status: 'queued',
+      phase: 'queued',
+      error: null,
+      startedAt: null,
+      finishedAt: null
+    });
+    return { job: updated };
+  });
+
   return app;
 }
 

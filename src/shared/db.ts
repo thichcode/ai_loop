@@ -288,6 +288,14 @@ export function createDb(databasePath: string) {
         .map(mapArtifact);
     },
 
+    deleteJobTasks(jobId: string): void {
+      db.transaction(() => {
+        db.prepare('DELETE FROM job_logs WHERE job_id = ?').run(jobId);
+        db.prepare('DELETE FROM job_artifacts WHERE job_id = ?').run(jobId);
+        db.prepare('DELETE FROM tasks WHERE job_id = ?').run(jobId);
+      })();
+    },
+
     close(): void {
       db.close();
     }
