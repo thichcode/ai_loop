@@ -2,7 +2,10 @@ import type { JobRecord, TaskRecord, JobLogRecord, JobArtifactRecord } from '../
 
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { headers: { 'Accept': 'application/json' }, ...init });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status}: ${body}`);
+  }
   return res.json() as Promise<T>;
 }
 
